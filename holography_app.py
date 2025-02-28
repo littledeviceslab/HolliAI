@@ -1,5 +1,5 @@
 import streamlit as st
-import reco as vc  # Your reconstruction functions from reco.py
+import reco as vc  # Uses the updated functions from reco.py
 import cv2
 import numpy as np
 import tempfile
@@ -12,6 +12,8 @@ st.title("Holographic Reconstruction")
 # --- SIDEBAR CONTROLS ---
 with st.sidebar:
     uploaded_video = st.file_uploader("Upload a Hologram Video", type=["mp4", "avi", "mov"])
+    # These parameters are not directly used in recoFrame now,
+    # but you can later pass wavelength and pixel_size to modify dxy and wvlen if needed.
     wavelength = st.slider("Wavelength (nm)", min_value=400, max_value=800, value=650)
     pixel_size = st.slider("Pixel Size (μm)", min_value=0.1, max_value=10.0, value=1.4, step=0.1)
     distance = st.slider("Distance (mm)", min_value=1, max_value=250, value=10)
@@ -28,7 +30,7 @@ if uploaded_video is not None:
         tmp.write(uploaded_video.read())
         temp_video_path = tmp.name
 
-    # Open the video using your custom function from reco.py
+    # Open the video using the updated function from reco.py
     cap = vc.openVid(temp_video_path)  # Ensure this accepts a file path
     if not cap or not cap.isOpened():
         st.error("Error opening video file.")
@@ -53,7 +55,7 @@ if uploaded_video is not None:
             cv2.drawMarker(
                 colorIM,
                 (x_center, y_center),
-                (0, 255, 0),  # Green color
+                (0, 255, 0),  # Green color for the crosshair
                 markerType=cv2.MARKER_CROSS,
                 markerSize=20,
                 thickness=2
@@ -67,7 +69,7 @@ if uploaded_video is not None:
             cropIM = grayIM[y0:y1, x0:x1]
 
             # --- Reconstruction ---
-            # Convert distance from mm to meters if needed
+            # Convert distance from mm to meters
             recoIM = vc.recoFrame(cropIM, distance * 1e-3)
 
             # Resize the reconstructed image to match the original image size
