@@ -1,13 +1,13 @@
 import streamlit as st
-import reco as vc  # Assuming your reconstruction functions are in reco.py
+import reco as vc  # Your reconstruction functions are in reco.py
 import cv2
 import numpy as np
+import tempfile
+import os
 
-# --- UI Elements ---
 st.title("Holographic Reconstruction")
 
-# File Upload
-uploaded_file = st.file_uploader("Upload Hologram", type=["mp4", "h264"])
+uploaded_video = st.file_uploader("Upload a Hologram Video", type=["mp4", "avi", "mov"])
 
 # Parameters
 wavelength = st.slider("Wavelength (nm)", min_value=400, max_value=800, value=650)
@@ -20,10 +20,15 @@ def clamp(value, minv, maxv):
     return max(min(value, maxv), minv)
 
 # --- Reconstruction Logic ---
-if uploaded_file is not None:
-    # Open video
-    cap = vc.openVid(uploaded_file.name)
-    if not cap.isOpened():
+if uploaded_video is not None:
+    # 1. Write the uploaded video to a temporary file on disk
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        tmp.write(uploaded_video.read())
+        temp_video_path = tmp.name
+
+    # 2. Open the video with your custom function in reco.py
+    cap = vc.openVid(temp_video_path)  # Ensure openVid can handle a filepath
+    if not cap or not cap.isOpened():
         st.error("Error opening video file.")
     else:
         # Get total frames
@@ -43,10 +48,10 @@ if uploaded_file is not None:
             x_center = grayIM.shape[1] // 2  # Default center
             y_center = grayIM.shape[0] // 2
 
-            # Allow user to select center if needed (using a button and mouse click)
+            # Optional: Let user select crop center with a button + mouse click
             if st.button("Select Crop Center"):
                 st.info("Please click on the 'Full Image' display to select the center for cropping.")
-                # (Implementation for mouse click to select center would go here)
+                # Implementation for mouse click selection would go here
 
             # Calculate crop window
             x0 = clamp(x_center - crop_size, 0, grayIM.shape[1])
@@ -58,7 +63,8 @@ if uploaded_file is not None:
             cropIM = grayIM[y0:y1, x0:x1]
 
             # --- Reconstruction ---
-            recoIM = vc.recoFrame(cropIM, distance * 1e-3)  # Assuming distance is in mm
+            # distance is in mm, so multiply by 1e-3 to convert to meters, if needed
+            recoIM = vc.recoFrame(cropIM, distance * 1e-3)
 
             # Display images
             st.image(grayIM, caption="Full Image", channels="GRAY")
@@ -66,5 +72,8 @@ if uploaded_file is not None:
 
             # --- Save Images ---
             if st.button("Save Images"):
-                # (Implementation for saving images would go here)
+                # Implementation for saving images to disk or cloud
                 st.success("Images saved successfully!")
+
+    # 3. Clean up the temporary file
+    os.remove(temp_video_path)
