@@ -1,90 +1,92 @@
 import streamlit as st
-import reco as vc  # Your reconstruction functions from reco.py
+import reco as vc  # Your updated reconstruction code
 import cv2
 import numpy as np
 import tempfile
 import os
 
-# Set the page to wide mode for more horizontal space
+# Wide layout for side-by-side images
 st.set_page_config(layout="wide")
-st.title("Holographic Reconstruction")
+st.title("Holographic Reconstruction Demo")
 
 # --- SIDEBAR CONTROLS ---
 with st.sidebar:
-    uploaded_video = st.file_uploader("Upload a Hologram Video", type=["mp4", "avi", "mov"])
-    # These parameters remain available if you later decide to update the reconstruction parameters.
-    wavelength = st.slider("Wavelength (nm)", min_value=400, max_value=800, value=650)
-    pixel_size = st.slider("Pixel Size (μm)", min_value=0.1, max_value=10.0, value=1.4, step=0.1)
-    distance = st.slider("Distance (mm)", min_value=1, max_value=250, value=10)
-    crop_size = st.slider("Crop Size", min_value=10, max_value=300, value=25)
+    uploaded_video = st.file_uploader("Upload Hologram Video", type=["mp4", "avi", "mov"])
+    frame_number = st.number_input("Frame #", min_value=0, value=0, step=1)
+    crop_size = st.slider("Crop (Half-Width in Pixels)", min_value=1, max_value=300, value=50)
+    z_distance = st.slider("Z Distance (mm)", min_value=1, max_value=1000, value=267)
+    st.write("Adjust to find best focus.")
 
-# Helper function for clamping values
+# Helper to clamp index ranges
 def clamp(value, minv, maxv):
     return max(min(value, maxv), minv)
 
 # --- MAIN LOGIC ---
 if uploaded_video is not None:
-    # Write the uploaded video to a temporary file
+    # Write the uploaded video to a temporary file so OpenCV can read it
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
         tmp.write(uploaded_video.read())
         temp_video_path = tmp.name
 
-    # Open the video using your custom function from reco.py
-    cap = vc.openVid(temp_video_path)  # Ensure this accepts a file path
+    # Open the video
+    cap = vc.openVid(temp_video_path)
     if not cap or not cap.isOpened():
         st.error("Error opening video file.")
     else:
-        # Select a frame to work with
-        max_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        frame_number = st.slider("Frame Number", min_value=0, max_value=max_frames - 1, value=0)
-        ret, rawIM = vc.getFrame(cap, frame_number)
+        # Ensure frame_number is in valid range
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_index = clamp(frame_number, 0, total_frames - 1)
+
+        ret, raw_frame = vc.getFrame(cap, frame_index)
         if not ret:
-            st.error("Error reading frame from video.")
+            st.error(f"Could not read frame {frame_index}.")
         else:
-            # Convert the frame to grayscale
-            grayIM = cv2.cvtColor(rawIM, cv2.COLOR_BGR2GRAY)
-            height, width = grayIM.shape
+            # Convert to grayscale
+            gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+            h, w = gray.shape
 
-            # --- Use a Fixed Center (for zoom) ---
-            # Instead of using XY sliders, always use the image center.
-            x_center = width // 2
-            y_center = height // 2
+            # Center coords
+            cx, cy = w // 2, h // 2
 
-            # --- Draw Crosshair on the Original Image ---
-            colorIM = cv2.cvtColor(grayIM, cv2.COLOR_GRAY2BGR)
+            # Draw a crosshair for clarity
+            colorIM = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
             cv2.drawMarker(
                 colorIM,
-                (x_center, y_center),
-                (0, 255, 0),  # Green color for the crosshair
+                (cx, cy),
+                (0, 255, 0),
                 markerType=cv2.MARKER_CROSS,
                 markerSize=20,
                 thickness=2
             )
 
-            # --- Calculate Crop Window (Centered) ---
-            x0 = clamp(x_center - crop_size, 0, width)
-            x1 = clamp(x_center + crop_size, 0, width)
-            y0 = clamp(y_center - crop_size, 0, height)
-            y1 = clamp(y_center + crop_size, 0, height)
-            cropIM = grayIM[y0:y1, x0:x1]
+            # Crop around center
+            x0 = clamp(cx - crop_size, 0, w)
+            x1 = clamp(cx + crop_size, 0, w)
+            y0 = clamp(cy - crop_size, 0, h)
+            y1 = clamp(cy + crop_size, 0, h)
+            crop = gray[y0:y1, x0:x1]
 
-            # --- Reconstruction ---
-            # Convert distance from mm to meters before passing to recoFrame
-            recoIM = vc.recoFrame(cropIM, distance * 1e-3)
-            # Resize the reconstructed image back to the original image size
-            recoIM_resized = cv2.resize(recoIM, (width, height), interpolation=cv2.INTER_LINEAR)
+            # Convert Z from mm to meters
+            z_m = z_distance * 1e-3
+            # Reconstruct
+            reco = vc.recoFrame(crop, z_m)
 
-            # --- Layout: Original on Left, Reconstructed on Right ---
+            # (Optional) Resize reconstruction back to original dimension
+            reco_resized = cv2.resize(reco, (w, h), interpolation=cv2.INTER_LINEAR)
+
+            # Layout: Original on left, Reconstructed on right
             col1, col2 = st.columns(2)
             with col1:
-                st.image(colorIM, caption="Original Image (Centered)", channels="BGR", width=600)
+                st.image(colorIM, caption=f"Frame {frame_index} (Raw Hologram)", channels="BGR")
             with col2:
-                st.image(recoIM_resized, caption="Reconstructed Image (Zoomed)", channels="GRAY", width=600)
+                st.image(reco_resized, caption=f"Reconstructed @ {z_distance} mm", channels="GRAY")
 
-            # Optional: Save Images
+            # Save button (optional)
             if st.button("Save Images"):
-                # (Your save logic here)
-                st.success("Images saved successfully!")
+                # Example save logic
+                cv2.imwrite("hologram_frame.png", colorIM)
+                cv2.imwrite("reconstructed.png", reco_resized)
+                st.success("Images saved to current directory.")
 
-    # Clean up the temporary file
+    # Clean up
     os.remove(temp_video_path)
