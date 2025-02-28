@@ -14,7 +14,7 @@ with st.sidebar:
     uploaded_video = st.file_uploader("Upload a Hologram Video", type=["mp4", "avi", "mov"])
     wavelength = st.slider("Wavelength (nm)", min_value=400, max_value=800, value=650)
     pixel_size = st.slider("Pixel Size (μm)", min_value=0.1, max_value=10.0, value=1.4, step=0.1)
-    distance = st.slider("Distance (mm)", min_value=1, max_value=50, value=10)
+    distance = st.slider("Distance (mm)", min_value=1, max_value=250, value=10)
     crop_size = st.slider("Crop Size", min_value=10, max_value=100, value=25)
 
 # Helper function for clamping values
