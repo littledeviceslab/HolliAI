@@ -13,7 +13,7 @@ st.title("Holographic Reconstruction Demo")
 with st.sidebar:
     uploaded_video = st.file_uploader("Upload Hologram Video", type=["mp4", "avi", "mov"])
     frame_number = st.number_input("Frame #", min_value=0, value=0, step=1)
-    crop_size = st.slider("Crop (Half-Width in Pixels)", min_value=1, max_value=300, value=50)
+    crop_size = st.slider("Crop (Half-Width in Pixels)", min_value=200, max_value=400, value=10)
     z_distance = st.slider("Z Distance (mm)", min_value=1, max_value=1000, value=267)
     st.write("Adjust to find best focus.")
 
