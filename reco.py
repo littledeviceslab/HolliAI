@@ -1,59 +1,73 @@
-import cv2
 import numpy as np
+import cv2
 
 def openVid(vid):
+    """Open a video file using OpenCV."""
     cap = cv2.VideoCapture(vid)
     return cap
 
 def getFrame(cap, index):
+    """Retrieve a specific frame from the video."""
     cap.set(cv2.CAP_PROP_POS_FRAMES, index)
     ret, rawFrame = cap.read()
     return ret, rawFrame
 
-def propagate(input_img, wvlen, zdist, dxy):
+def reconstructImage(im, zdist_um):
     """
-    Fresnel propagation of input_img by distance zdist using wavelength wvlen
-    and pixel size dxy. input_img should be a 2D array (amplitude).
+    Reconstruct the hologram using your manual frequency-grid approach.
+
+    Parameters:
+        im         : 2D numpy array (grayscale hologram, 8-bit).
+        zdist_um   : Distance (object to sensor) in *microns*.
+
+    Returns:
+        imAmp      : Reconstructed image as a uint8 intensity.
     """
+    # 1) Convert to float and take sqrt (assuming im is intensity)
+    #    NOTE: If 'im' is 8-bit [0..255], we can directly do sqrt(im).
+    #    If you need normalization, do: im_float = im.astype(np.float32)/255.0, etc.
+    input_img = np.sqrt(im.astype(np.float32))
+
+    # 2) Constants
+    dxy   = 1.4e-6      # Pixel spacing (meters) = 1.4 microns
+    wvlen = 650.0e-9    # Wavelength of light (meters) = 650 nm
+
+    # Convert zdist from microns to meters so units match
+    zdist_m = zdist_um * 1e-6
+
+    # 3) Get image size, must be even values ideally
     M, N = input_img.shape
-    # Frequency grids
-    fx = np.fft.fftfreq(N, d=dxy)
-    fy = np.fft.fftfreq(M, d=dxy)
-    FX, FY = np.meshgrid(fx, fy)
-    kxy2 = FX**2 + FY**2
 
-    # Fourier transform (with shift so center is at 0 freq)
-    E0 = np.fft.fft2(np.fft.fftshift(input_img))
+    # 4) Prepare grid in frequency space with origin at (0,0)
+    #    The snippet manually splits the range into [0..N/2] and [N/2..0], etc.
+    #    We'll replicate it exactly for consistency with your math:
+    _x1 = np.arange(0, N/2)
+    _x2 = np.arange(N/2, 0, -1)
+    _y1 = np.arange(0, M/2)
+    _y2 = np.arange(M/2, 0, -1)
 
-    # Fresnel kernel
-    H = np.exp(-1j * np.pi * wvlen * zdist * kxy2)
+    _x = np.concatenate([_x1, _x2])
+    _y = np.concatenate([_y1, _y2])
 
-    # Inverse FFT to get propagated field
-    output_img = np.fft.ifftshift(np.fft.ifft2(E0 * H))
-    return output_img
+    x, y = np.meshgrid(_x, _y)
+    kx, ky = x / (dxy * N), y / (dxy * M)
+    kxy2 = (kx**2 + ky**2)
 
-def recoFrame(cropIM, z):
-    """
-    Reconstruct the cropped hologram at distance z (in meters).
-    """
-    # Convert to float [0..1]
-    cropIM_float = cropIM.astype(np.float32) / 255.0
-    # Estimate amplitude (assuming cropIM is intensity)
-    amp0 = np.sqrt(cropIM_float)
+    # 5) Compute FT at z=0
+    #    We use ifftshift(input_img) before fft2, per your snippet
+    E0 = np.fft.fft2(np.fft.ifftshift(input_img))
 
-    # System parameters (update to match your actual setup)
-    dxy   = 1.4e-6      # Pixel size in meters (e.g. 1.4 μm)
-    wvlen = 650.0e-9    # Wavelength in meters (e.g. 650 nm)
+    # 6) Compute phase aberration
+    _ph_abbr = np.exp(-1j * np.pi * wvlen * zdist_m * kxy2)
 
-    # Propagate
-    field = propagate(amp0, wvlen, z, dxy)
-    # Intensity = |field|^2
-    intensity = np.abs(field)**2
+    # 7) Propagate + shift back
+    output_img = np.fft.fftshift(np.fft.ifft2(E0 * _ph_abbr))
 
-    # Normalize to [0..255]
-    if np.max(intensity) > 0:
-        intensity_scaled = 255.0 * intensity / np.max(intensity)
-    else:
-        intensity_scaled = intensity
+    # 8) Intensity = |output_img|^2
+    amp = np.abs(output_img)**2
 
-    return intensity_scaled.astype(np.uint8)
+    # 9) Convert to 8-bit
+    #    NOTE: This direct cast may lose dynamic range if 'amp' is large or small.
+    imAmp = amp.astype(np.uint8)
+
+    return imAmp
